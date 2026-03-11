@@ -34,13 +34,14 @@ def main():
     )
 
     print("Hello from my-cursor!")
+    message = input("Enter your message:")
 
     response = agent.invoke(
         {
             "messages": [
                 {
                     "role": "user",
-                    "content": "Please fix the bugs in the test.py file present.",
+                    "content": message,
                 }
             ],
         }

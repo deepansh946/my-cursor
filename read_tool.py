@@ -50,7 +50,6 @@ class ReadAndWriteTool(BaseTool):
         **kwargs,
     ):
         print("TOOL CALL:", command, path, content, kwargs)
-
         if path:
             path = self.sanitize_path(path)
 
