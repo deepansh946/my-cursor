@@ -10,5 +10,7 @@ dependencies = [
     "langchain-community>=0.4.1",
     "langchain-google-genai>=4.2.1",
     "langchain-google-vertexai>=3.2.2",
+    "langchain-openai>=1.1.11",
+    "langsmith>=0.7.16",
     "pygithub>=2.8.1",
 ]

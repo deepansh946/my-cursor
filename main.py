@@ -1,19 +1,24 @@
 import os
+from langchain_core.load import dumps, loads
+import langchain
 from langchain.chat_models import init_chat_model
 from deepagents import create_deep_agent
 from pathlib import Path
-from langchain_community.tools.file_management import (
-    WriteFileTool,
-    ReadFileTool,
-)
+
+from read_tool import ReadAndWriteTool
+
+langchain.debug = True
 
 
 prompt = """
 Hello your name is Enigma, you are a helpful coding assistant. Whenever any file is provided to you, you will analyze the file and give 3 bug fixes for the file.
 
-When asked to read a file, you will use the ReadFileTool tool to read the file and for writing a file, you will use the WriteFileTool tool. 
-
-Whenever you'll make changes in the file, you will do at the bottom of the file so that I can easily see the changes.
+Tools Usage Instructions:
+- When asked to do anything with a file, you will use the ReadAndWriteTool tool to read or write the file.
+-When fixing code you MUST:
+1. read the file
+2. modify the contents
+3. write the full updated file using write_file
 """
 
 
@@ -23,25 +28,25 @@ def main():
         model=model,
         name="Enigma",
         tools=[
-            ReadFileTool(),
-            WriteFileTool(),
+            ReadAndWriteTool(),
         ],
         system_prompt=prompt,
     )
-    location = os.path.join(os.path.dirname(__file__), "test.py")
 
-    print("Hello from my-cursor!, location:", location)
+    print("Hello from my-cursor!")
 
     response = agent.invoke(
         {
             "messages": [
                 {
                     "role": "user",
-                    "content": f"Please fix the bugs in the test.py file present at {location}. For editing the file, you can use the same file location and name.",
+                    "content": "Please fix the bugs in the test.py file present.",
                 }
             ],
         }
     )
+
+    # print(dumps(response, pretty=True))
 
     for message in response["messages"]:
         print(message.content)
