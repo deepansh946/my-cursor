@@ -34,23 +34,29 @@ def main():
     )
 
     print("Hello from my-cursor!")
-    message = input("Enter your message:")
+    message = input("Enter your message: ")
 
-    response = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": message,
-                }
-            ],
-        }
-    )
+    while message != "exit":
+        response = agent.invoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": message,
+                    }
+                ],
+            }
+        )
 
+        if message == "exit":
+            print("Thank you for using my-cursor!")
+            break
+
+        for message in response["messages"]:
+            print(message.content)
+
+        message = input("Enter your message: ")
     # print(dumps(response, pretty=True))
-
-    for message in response["messages"]:
-        print(message.content)
 
 
 if __name__ == "__main__":
