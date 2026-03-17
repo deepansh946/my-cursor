@@ -1,13 +1,9 @@
-import os
 from langchain_core.load import dumps, loads
 import langchain
 from langchain.chat_models import init_chat_model
-from deepagents import create_deep_agent
-from pathlib import Path
+from langchain.agents import create_agent
 
 from read_tool import ReadAndWriteTool
-
-langchain.debug = True
 
 
 prompt = """
@@ -24,14 +20,12 @@ Tools Usage Instructions:
 
 def main():
     model = init_chat_model(model="google_genai:gemini-2.5-flash-lite")
-    agent = create_deep_agent(
+    tools = [ReadAndWriteTool()]
+    agent = create_agent(
         model=model,
-        name="Enigma",
-        tools=[
-            ReadAndWriteTool(),
-        ],
+        tools=tools,
         system_prompt=prompt,
-    )
+    ).with_config({"recursion_limit": 20})
 
     print("Hello from my-cursor!")
     message = input("Enter your message: ")
