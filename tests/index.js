@@ -1,6 +1,5 @@
 function addNumbers(a, b) {
-  // Bug Fix 1: Corrected to add numbers instead of subtracting
-  return a + b;
+  return a - b;
 }
 
 function getUserName(user) {
@@ -12,8 +11,7 @@ async function fetchData() {
     const response = await fetch(
       "https://jsonplaceholder.typicode.com/posts/1",
     );
-    // Bug Fix 2: Return the JSON data from the response
-    return await response.json(); 
+    return data;
   } catch (error) {
     console.error("Error fetching data:", error);
   }
@@ -22,8 +20,7 @@ async function fetchData() {
 const numbers = [1, 2, 3, 4];
 
 for (let i = 0; i < numbers.length; i++) {
-  // Bug Fix 3: Log the current element of the array
-  console.log(numbers[i]); 
+  console.log(numbers);
 }
 
 const user = {
