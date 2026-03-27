@@ -1,31 +1,23 @@
-from langchain.tools import BaseTool
 from pathlib import Path
-import os
-
-from langchain_community.tools.file_management import (
-    ReadFileTool,
-    WriteFileTool,
-    ListDirectoryTool,
-)
 
 
-def indexer() -> dict[str, str] | None:
-    """Returns a dict of all the file locations.
+def indexer(src: str, filter: str = "*"):
+    """Returns the location of the files present in the repo.
 
     Args:
-        location: string
+        src: root directory
+        filter: glob pattern like index.js or *.js or **/*.py.
     """
+    root = Path(src)
 
-    srcLocation = os.getcwd() + "/tests"
-    fileLocationsIndex: dict[str, str] = {}
+    results = [
+        {
+            "path": str(p),
+            "name": p.name,
+            "type": "file" if p.is_file() else "folder",
+        }
+        for p in root.rglob(filter)
+        if not p.name.startswith(".")
+    ]
 
-    fileLocations = os.listdir(srcLocation)
-
-    nonDotFiles = [file for file in fileLocations if not file.startswith(".")]
-
-    for fileOrFolder in nonDotFiles:
-        fullLocation = f"{srcLocation}/{fileOrFolder}"
-        if os.path.isfile(fullLocation):
-            fileLocationsIndex[fileOrFolder] = fullLocation
-
-    return fileLocationsIndex
+    return results[:20]
