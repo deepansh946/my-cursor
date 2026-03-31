@@ -23,7 +23,7 @@ def indexer(src: str, filter: str = "*"):
             "type": "file",
         }
         for p in root.rglob(filter)
-        if p.is_file() and not p.name.startswith(".")
+        if p.is_file() and not any(part.startswith(".") for part in p.parts)
     ]
 
     if not results:
