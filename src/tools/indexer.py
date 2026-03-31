@@ -10,14 +10,25 @@ def indexer(src: str, filter: str = "*"):
     """
     root = Path(src)
 
+    if filter == "*":
+        raise ValueError("Filter too broad, use something like *.js")
+
+    if not any(x in filter for x in ["*", "/"]):
+        filter = f"*{filter}"
+
     results = [
         {
             "path": str(p),
             "name": p.name,
-            "type": "file" if p.is_file() else "folder",
+            "type": "file",
         }
         for p in root.rglob(filter)
-        if not p.name.startswith(".")
+        if p.is_file() and not p.name.startswith(".")
     ]
+
+    if not results:
+        return [{"error": f"No files found for filter: {filter}"}]
+
+    results.sort(key=lambda x: x["path"])
 
     return results[:20]

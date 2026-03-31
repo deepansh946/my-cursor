@@ -31,7 +31,7 @@ IMPORTANT RULES:
 - Do NOT answer without calling tools.
 
 Workflow:
-1. Call indexer with filter="*filename"
+1. Call indexer with filter="*filename" and src as the current working directory
 2. Use returned path
 3. Call readFile
 4. Fix bugs
