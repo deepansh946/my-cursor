@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-def indexer(src: str, filter: str = "*"):
+def indexer(src: str = ".", filter: str = "*"):
     """Returns the location of the files present in the repo.
 
     Args:

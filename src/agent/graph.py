@@ -54,71 +54,22 @@ sys_msg = SystemMessage(content=(SYSTEM_PROMPT))
 
 def call_model(state: State):
 
-    summary = state.get("summary", "")
-
-    if summary:
-        system_message = f"Summary of the above conversation: {summary}"
-        messages = [SystemMessage(content=system_message)] + state["messages"]
-
-    else:
-        messages = state["messages"]
+    messages = [sys_msg] + state["messages"]
 
     response = llm_with_tools.invoke(messages)
 
     return {"messages": response}
 
 
-def summarize_conversation(state: State):
-
-    summary = state.get("summary", "")
-
-    if summary:
-        summary_message = (
-            f"This is the summary to date: {summary}\n\n"
-            "Extend the summary by taking into account the new messages above:"
-        )
-
-    else:
-        summary_message = "Create a summary of the conversation above:"
-
-    messages = state["messages"] + [HumanMessage(content=summary_message)]
-
-    response = llm_with_tools.invoke(messages)
-
-    # Delete all but the 2 most recent messages
-    delete_messages = [RemoveMessage(id=m.id) for m in state["messages"][:-2]]
-    return {"summary": response.content, "messages": delete_messages}
-
-
-# Determine whether to end or summarize the conversation
-def should_continue(state: State) -> Literal["summarize_conversation", END]:
-    """Return the next node to execute."""
-
-    messages = state["messages"]
-
-    # If there are more than six messages, then we summarize the conversation
-    if len(messages) > 6:
-        return "summarize_conversation"
-
-    # Otherwise we can just end
-    return END
-
-
 # Build graph
 builder = StateGraph(MessagesState)
 builder.add_node("tools", ToolNode(tools))
-builder.add_node("summarize_conversation", summarize_conversation)
 builder.add_node("call_model", call_model)
 builder.add_edge(START, "call_model")
 builder.add_conditional_edges(
     "call_model",
     tools_condition,
 )
-builder.add_conditional_edges(
-    "call_model",
-    should_continue,
-)
-builder.add_edge("summarize_conversation", "call_model")
 builder.add_edge("tools", "call_model")
 
 # Compile graph
