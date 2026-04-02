@@ -1,8 +1,8 @@
-from langchain.tools import BaseTool
-from pathlib import Path
-import os
+from langchain_core.tools import tool
+from langchain_core.tools.base import ToolException
 
 
+@tool
 def writeFile(content: str, src: str) -> bool | str | None:
     """Write the file content at src.
 
@@ -16,6 +16,6 @@ def writeFile(content: str, src: str) -> bool | str | None:
             f.write(content)
         return True
     except FileNotFoundError:
-        return f"Error: File not found at {src}"
+        raise ToolException(f"Error: File not found at {src}")
     except Exception as e:
-        return f"Error in writing file: {e}"
+        raise ToolException(f"Error in writing file: {e}")

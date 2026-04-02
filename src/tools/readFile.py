@@ -1,8 +1,8 @@
-from langchain.tools import BaseTool
-from pathlib import Path
-import os
+from langchain_core.tools import tool
+from langchain_core.tools.base import ToolException
 
 
+@tool
 def readFile(src: str) -> str | None:
     """Reads the file present at src.
 
@@ -15,6 +15,6 @@ def readFile(src: str) -> str | None:
             content = f.read()
         return content
     except FileNotFoundError:
-        return f"Error: File not found at {src}"
+        raise ToolException(f"Error: File not found at {src}")
     except Exception as e:
-        return f"Error in reading file: {e}"
+        raise ToolException(f"Error in reading file: {e}")
