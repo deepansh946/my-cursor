@@ -19,10 +19,6 @@ tools = [indexer, readFile, writeFile]
 src = os.getcwd()
 
 
-class State(MessagesState):
-    summary: str
-
-
 # Define LLM with bound tools
 llm = init_chat_model(model="google_genai:gemini-2.5-flash-lite")
 llm_with_tools = llm.bind_tools(tools)
@@ -59,12 +55,19 @@ def custom_error_handler(e: ToolException) -> str:
     return e.args[0]
 
 
-def call_model(state: State):
+def call_model(state: MessagesState):
 
     messages = [sys_msg] + state["messages"]
 
-    response = llm_with_tools.invoke(messages)
+    # print("=== MESSAGES SENT TO MODEL ===")
 
+    # for m in messages:
+    # print(f"  [{m.type}]: {str(m.content)[:200]}")
+
+    response = llm_with_tools.invoke(messages)
+    # print(
+    # f"=== MODEL RESPONSE: {response.content[:200] if response.content else 'EMPTY'} ==="
+    # )
     return {"messages": response}
 
 
