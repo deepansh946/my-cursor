@@ -1,18 +1,21 @@
 # from langchain_core.load import dumps, loads
-import datetime
 import os
 
 from langchain.chat_models import init_chat_model
+from dotenv import load_dotenv
 
 # from langchain.agents import create_agent
 from langchain_core.messages import SystemMessage
 from langchain_core.tools.base import ToolException
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from src.tools.indexer import indexer
 from src.tools.readFile import readFile
 from src.tools.writeFile import writeFile
+
+load_dotenv()
 
 tools = [indexer, readFile, writeFile]
 
@@ -86,5 +89,4 @@ builder.add_conditional_edges(
 builder.add_edge("tools", "model")
 
 # Compile graph
-graph = builder.compile()
-print(datetime.datetime.now(), "----------------------------------------------")
+graph = builder.compile(checkpointer=MemorySaver())
