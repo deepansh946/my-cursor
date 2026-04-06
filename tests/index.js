@@ -2,6 +2,13 @@ function addNumbers(a, b) {
   return a - b;
 }
 
+function divideNumbers(a, b) {
+  if (b === 0) {
+    throw new Error("Cannot divide by zero");
+  }
+  return a / b;
+}
+
 function getUserName(user) {
   return user.name;
 }
@@ -31,4 +38,5 @@ const user = {
 console.log(getUserName(user));
 
 console.log(addNumbers(5, 10));
+console.log(divideNumbers(10, 2));
 fetchData();
