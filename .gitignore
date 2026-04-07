@@ -63,6 +63,8 @@ db.sqlite3-journal
 langgraph.db
 langgraph.db-journal
 piper.db
+piper.db-shm
+piper.db-wal
 piper.db-journal
 
 # Flask stuff:

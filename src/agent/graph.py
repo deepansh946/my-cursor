@@ -1,20 +1,21 @@
 # from langchain_core.load import dumps, loads
 import os
-import asyncio
 
-from langchain.chat_models import init_chat_model
 from dotenv import load_dotenv
+from langchain.chat_models import init_chat_model
 
 # from langchain.agents import create_agent
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools.base import ToolException
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from src.tools.indexer import indexer
 from src.tools.readFile import readFile
-from src.tools.writeFile import writeFile
 from src.tools.terminal import terminal
+from src.tools.writeFile import writeFile
+
+# from src.tools.stackoverflow import stackoverflow
 
 load_dotenv()
 
@@ -35,13 +36,6 @@ AVAILABLE TOOLS:
 - readFile: Read file contents. Only use paths returned by indexer.
 - writeFile: Write/update file contents.
 - terminal: Execute shell commands in the project directory.
-
-═══════════════════════════════════════
-ABSOLUTE RULE — NO EXCEPTIONS
-═══════════════════════════════════════
-You MUST call a tool for EVERY user message.
-Responding with text alone is ALWAYS wrong.
-If you say "I can't" or "I don't have access" — you are wrong. Use the terminal tool.
 
 ═══════════════════════════════════════
 TERMINAL RULES
@@ -105,7 +99,6 @@ RULE: NEVER use indexer() to answer questions about the runtime environment.
 ═══════════════════════════════════════
 NEVER DO THIS
 ═══════════════════════════════════════
-- Never respond without calling a tool
 - Never say "I can't show you X"
 - Never say "I don't have access to X"
 - Never offer alternatives instead of doing the task
@@ -122,39 +115,6 @@ def custom_error_handler(e: ToolException) -> str:
 def call_model(state: MessagesState):
     messages = [sys_msg] + state["messages"]
     response = llm_with_tools.invoke(messages)
-
-    has_tool_call = hasattr(response, "tool_calls") and len(response.tool_calls) > 0
-    is_text_only = bool(response.content) and not has_tool_call
-
-    # Only retry if this is the FIRST response (no tool messages in history yet)
-    has_prior_tool_results = any(
-        getattr(m, "type", "") == "tool" for m in state["messages"]
-    )
-
-    if is_text_only and not has_prior_tool_results:
-        last_user_msg = next(
-            (
-                m.content
-                for m in reversed(state["messages"])
-                if getattr(m, "type", "") == "human"
-            ),
-            "",
-        ).lower()
-
-        retry_messages = messages + [
-            response,
-            HumanMessage(
-                content=(
-                    f"You responded with text instead of calling a tool. This is not allowed. "
-                    f"The user asked: '{last_user_msg}'. "
-                    f"You MUST call a tool now. "
-                    f"For version checks: terminal(command='python --version', cwd='{src}'). "
-                    f"For files: indexer(filter='*filename', src='{src}'). "
-                    f"Call the correct tool immediately."
-                )
-            ),
-        ]
-        response = llm_with_tools.invoke(retry_messages)
 
     return {"messages": response}
 

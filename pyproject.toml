@@ -23,6 +23,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "langgraph-checkpoint-sqlite>=3.0.3",
     "aiosqlite>=0.22.1",
+    "requests>=2.32.5",
 ]
 
 
