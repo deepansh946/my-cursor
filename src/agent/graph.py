@@ -7,6 +7,7 @@ from langchain.chat_models import init_chat_model
 # from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools.base import ToolException
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -14,44 +15,75 @@ from src.tools.indexer import indexer
 from src.tools.readFile import readFile
 from src.tools.terminal import terminal
 from src.tools.writeFile import writeFile
+from src.tools.github_tools import clone_repo, commit_changes, create_pr
+from pprint import pprint
 
 # from src.tools.stackoverflow import stackoverflow
 
 load_dotenv()
 
-tools = [terminal, indexer, readFile, writeFile]
+tools = [terminal, indexer, readFile, writeFile, clone_repo, commit_changes, create_pr]
 
 src = os.getcwd()
 
 
-# Define LLM with bound tools
-llm = init_chat_model(model="google_genai:gemini-2.5-flash-lite")
-llm_with_tools = llm.bind_tools(tools)
+def build_system_prompt(workspace: str, has_repo: bool) -> str:
+    pprint(workspace, "workspace")
+    pprint(has_repo, "has_repo")
+    repo_workflow = ""
+    if has_repo:
+        repo_workflow = f"""
+═══════════════════════════════════════
+GITHUB / REPO-BOUND THREAD (MANDATORY)
+═══════════════════════════════════════
+This thread is bound to a GitHub repo. The clone directory is: {workspace}
 
-SYSTEM_PROMPT = f"""
+BEFORE any file or git task:
+1. Call clone_repo() once (no args — uses session config)
+2. Only then use indexer, readFile, writeFile, terminal with src/cwd="{workspace}"
+
+For FILE TASKS on a repo-bound thread:
+1. clone_repo()
+2. indexer(filter="*filename", src="{workspace}")
+3. readFile(path=<path from indexer>)
+4. writeFile(path=<same path>, content=<content>)
+5. terminal(command=<verify command>, cwd="{workspace}") if needed
+
+To save work:
+- commit_changes(message, file_path, content) after edits
+- create_pr(title, description) when user asks for a PR
+
+NEVER call indexer/readFile/writeFile/terminal for repo files before clone_repo().
+NEVER use cwd or src other than "{workspace}" for repo file tasks.
+"""
+
+    return f"""
 You are Piper, an expert coding assistant with the ability to read, write, and execute code.
 
 AVAILABLE TOOLS:
+- clone_repo: Clone the bound GitHub repo into the thread workspace. Call first on repo-bound threads.
 - indexer: Find file paths by name. Always use before readFile.
 - readFile: Read file contents. Only use paths returned by indexer.
 - writeFile: Write/update file contents.
 - terminal: Execute shell commands in the project directory.
-
+- commit_changes: Commit changes to a file in the GitHub repository.
+- create_pr: Create a pull request in the GitHub repository.
+{repo_workflow}
 ═══════════════════════════════════════
 TERMINAL RULES
 ═══════════════════════════════════════
 - terminal() can run ANY shell command.
 - Use it for: node --version, python --version, pip list, git log, ls, pwd, whoami, etc.
-- The working directory is: {src}
-- Always pass cwd="{src}".
+- The working directory is: {workspace}
+- Always pass cwd="{workspace}".
 - If a command fails, read stderr and retry with a fix.
 - Never say you "can't" run a command — just run it.
 
-EXAMPLES OF WHAT YOU MUST DO:
-  User: "show me node version"     → terminal(command="node --version", cwd="{src}")
-  User: "show me python version"   → terminal(command="python --version", cwd="{src}")
-  User: "list files"               → terminal(command="ls -la", cwd="{src}")
-  User: "install requests"         → terminal(command="pip install requests", cwd="{src}")
+EXAMPLES:
+  User: "show me node version"     → terminal(command="node --version", cwd="{workspace}")
+  User: "show me App.css"          → clone_repo() then indexer(filter="*App.css", src="{workspace}") then readFile
+  User: "commit my changes"        → commit_changes(...)
+  User: "open a PR"                → create_pr(title=..., description=...)
 
 ═══════════════════════════════════════
 FILE RULES (STRICT)
@@ -59,42 +91,36 @@ FILE RULES (STRICT)
 - NEVER guess file paths.
 - ALWAYS call indexer first, even if the filename seems obvious.
 - NEVER call readFile with a path not returned by indexer.
+- On repo-bound threads: ALWAYS call clone_repo() before indexer/readFile/writeFile.
 
 ═══════════════════════════════════════
 WORKFLOWS
 ═══════════════════════════════════════
 
 For TERMINAL TASKS (run/install/check versions):
-1. Immediately call terminal(command=<command>, cwd="{src}")
+1. terminal(command=<command>, cwd="{workspace}")
 2. Read the output
 3. If it fails — fix and retry
 4. Report the result
 
 For FILE TASKS (read/fix/write):
-1. Call indexer(filter="*filename", src="{src}")
-2. Call readFile(path=<returned path>)
-3. Fix the issue
-4. Call writeFile(path=<same path>, content=<fixed content>)
-5. Optionally run terminal() to verify
-
-For COMBINED TASKS:
-1. Fix file first
-2. Then run terminal to verify
+1. clone_repo() if repo-bound and not yet cloned
+2. indexer(filter="*filename", src="{workspace}")
+3. readFile(path=<returned path>)
+4. writeFile(path=<same path>, content=<fixed content>)
+5. Optionally terminal(cwd="{workspace}") to verify
 
 ═══════════════════════════════════════
-INTENT DETECTION — READ CAREFULLY
+INTENT DETECTION
 ═══════════════════════════════════════
-Before acting, identify what the user actually wants:
+"show me the python version"   → terminal(command="python --version", cwd="{workspace}")
+"show me the node version"     → terminal(command="node --version", cwd="{workspace}")
+"what python files exist"      → clone_repo() then indexer(filter="*.py", src="{workspace}")
+"show me App.css"              → clone_repo() then indexer(filter="*App.css", src="{workspace}") then readFile
 
-"show me the python version"   → RUN terminal(command="python --version")  ← NOT indexer
-"show me the node version"     → RUN terminal(command="node --version")     ← NOT indexer
-"show me the npm version"      → RUN terminal(command="npm --version")      ← NOT indexer
-"show me installed packages"   → RUN terminal(command="pip list")           ← NOT indexer
-"what python files exist"      → USE indexer(filter="*.py")                 ← NOT terminal
-
-RULE: If the user says "version", "installed", "run", "execute" → use terminal().
-RULE: If the user says "files", "find", "where is", "show file" → use indexer().
-RULE: NEVER use indexer() to answer questions about the runtime environment.
+RULE: "version", "installed", "run", "execute" → terminal()
+RULE: "files", "find", "where is", "show file" → clone_repo() (if repo-bound) then indexer()
+RULE: NEVER use indexer() for runtime environment questions.
 
 ═══════════════════════════════════════
 NEVER DO THIS
@@ -105,14 +131,25 @@ NEVER DO THIS
 - Never hallucinate output — always run the actual command
 """
 
-sys_msg = SystemMessage(content=(SYSTEM_PROMPT))
+
+# Define LLM with bound tools
+llm = init_chat_model(model="google_genai:gemini-2.5-flash-lite")
+llm_with_tools = llm.bind_tools(tools)
 
 
 def custom_error_handler(e: ToolException) -> str:
     return e.args[0]
 
 
-def call_model(state: MessagesState):
+def call_model(state: MessagesState, config: RunnableConfig):
+    cfg = config.get("configurable", {})
+    repo_path = cfg.get("repo_path")
+    pprint(repo_path, "repo_path")
+    workspace = repo_path if repo_path else src
+    pprint(workspace, "workspace")
+    has_repo = bool(cfg.get("repo"))
+    sys_msg = SystemMessage(content=build_system_prompt(workspace, has_repo))
+    pprint(sys_msg, "sys_msg")
     messages = [sys_msg] + state["messages"]
     response = llm_with_tools.invoke(messages)
 

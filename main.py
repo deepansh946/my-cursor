@@ -1,10 +1,13 @@
 import json
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from pathlib import Path
+import shutil
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from pydantic import BaseModel
+from github import Github
 
 from src.agent.graph import builder
 
@@ -28,6 +31,8 @@ app = FastAPI(title="Langgraph API", lifespan=lifespan)
 class ChatRequest(BaseModel):
     message: str
     thread_id: str
+    github_token: str | None
+    repo: str | None
 
 
 def _serialize_checkpoint_messages(thread_id: str, messages: list) -> list[dict]:
@@ -74,8 +79,11 @@ def _serialize_checkpoint_messages(thread_id: str, messages: list) -> list[dict]
 
 @app.delete("/thread/{thread_id}")
 async def delete_thread(thread_id: str):
+    clone_path = Path(f"tmp/piper/{thread_id[:8]}")
     if _checkpointer is None:
         raise HTTPException(status_code=503, detail="Checkpointer not ready")
+    if clone_path.exists():
+        shutil.rmtree(clone_path)
     await _checkpointer.adelete_thread(thread_id)
     return {"ok": True}
 
@@ -95,9 +103,9 @@ def thread_messages(thread_id: str):
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    config = {"configurable": {"thread_id": request.thread_id}}
+    repo_path = f"tmp/piper/{request.thread_id[:8]}/{request.repo}" if request.repo else None
     input_data = {"messages": [request.message]}
-
+    config = {"configurable": {"thread_id": request.thread_id, "repo_path": repo_path, "repo": request.repo, "github_token": request.github_token}}
     async def event_stream():
         try:
             async for message, metadata in graph.astream(
@@ -132,3 +140,19 @@ async def chat_endpoint(request: ChatRequest):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+
+@app.get("/github/repos")
+async def get_github_repos(request: Request):
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    g = Github(token)
+
+    user = g.get_user()
+    repos = [{"name": r.name, "full_name": r.full_name, "private": r.private, "html_url": r.html_url} for r in user.get_repos()]
+
+    return {"repos": repos}
