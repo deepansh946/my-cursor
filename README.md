@@ -23,6 +23,7 @@ cp .env.example .env
 |---|---|---|
 | `GEMINI_API_KEY` | Google Gemini API key | Yes |
 | `LANGSMITH_API_KEY` | LangSmith tracing key | No |
+| `CORS_ORIGINS` | Comma-separated UI origins (e.g. `https://app.example.com`) | Prod |
 
 ## Run
 

@@ -1,10 +1,12 @@
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from pathlib import Path
 import shutil
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -33,6 +35,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Langgraph API", lifespan=lifespan)
+
+_cors_origins = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class ChatRequest(BaseModel):
