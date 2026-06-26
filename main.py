@@ -1,15 +1,22 @@
 import json
+import logging
 from contextlib import asynccontextmanager
 
 from pathlib import Path
 import shutil
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from pydantic import BaseModel
 from github import Github
 
 from src.agent.graph import builder
+
+logger = logging.getLogger(__name__)
+
+_API_DIR = Path(__file__).resolve().parent
+_CHECKPOINT_DB = str(_API_DIR / "piper.db")
 
 graph = None
 _checkpointer = None
@@ -18,7 +25,7 @@ _checkpointer = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global graph, _checkpointer
-    async with AsyncSqliteSaver.from_conn_string("piper.db") as checkpointer:
+    async with AsyncSqliteSaver.from_conn_string(_CHECKPOINT_DB) as checkpointer:
         _checkpointer = checkpointer
         graph = builder.compile(checkpointer=checkpointer)
         yield
@@ -120,12 +127,15 @@ async def delete_thread(thread_id: str):
 
 
 @app.get("/thread/{thread_id}/messages")
-def thread_messages(thread_id: str):
+async def thread_messages(thread_id: str):
+    if graph is None:
+        raise HTTPException(status_code=503, detail="Graph not ready")
     config = {"configurable": {"thread_id": thread_id}}
     try:
-        snap = graph.get_state(config)
+        snap = await graph.aget_state(config)
     except Exception:
-        return {"messages": []}
+        logger.exception("Failed to load checkpoint for thread %s", thread_id)
+        raise HTTPException(status_code=500, detail="Failed to load messages")
     if snap is None or not snap.values:
         return {"messages": []}
     raw = snap.values.get("messages") or []
@@ -135,7 +145,7 @@ def thread_messages(thread_id: str):
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     repo_path = _repo_path(request.thread_id, request.repo)
-    input_data = {"messages": [request.message]}
+    input_data = {"messages": [HumanMessage(content=request.message)]}
     config = {"configurable": {"thread_id": request.thread_id, "repo_path": repo_path, "repo": request.repo, "github_token": request.github_token}}
     async def event_stream():
         try:
