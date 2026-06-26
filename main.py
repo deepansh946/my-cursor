@@ -46,6 +46,28 @@ def _repo_path(thread_id: str, repo: str | None) -> str | None:
     return str(_thread_workspace(thread_id) / slug)
 
 
+def _content_to_str(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text") or block.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+                else:
+                    parts.append(str(block))
+            else:
+                parts.append(str(block))
+        return "".join(parts)
+    if content is None:
+        return ""
+    return str(content)
+
+
 def _serialize_checkpoint_messages(thread_id: str, messages: list) -> list[dict]:
     """Align checkpoint state with the UI message shape (same fields as SSE chunks)."""
     out: list[dict] = []
@@ -67,11 +89,7 @@ def _serialize_checkpoint_messages(thread_id: str, messages: list) -> list[dict]
         }.get(type)
         if not type_name:
             continue
-        content = message.content
-        if isinstance(content, list):
-            content = json.dumps(content)
-        elif not isinstance(content, str):
-            content = str(content)
+        content = _content_to_str(message.content)
         item: dict = {
             "id": f"{thread_id}-cp-{idx}",
             "type": type_name,
@@ -84,6 +102,8 @@ def _serialize_checkpoint_messages(thread_id: str, messages: list) -> list[dict]
                 item["tool_name"] = name
                 if name == "terminal":
                     item["subtype"] = "terminal"
+                elif name in ("commit_changes", "create_pr"):
+                    item["subtype"] = "git"
         out.append(item)
     return out
 
@@ -133,7 +153,7 @@ async def chat_endpoint(request: ChatRequest):
 
                 chunk = {
                     "type": msg_type,
-                    "content": message.content,
+                    "content": _content_to_str(message.content),
                     "node": node,
                 }
 
@@ -143,6 +163,8 @@ async def chat_endpoint(request: ChatRequest):
 
                     if message.name == "terminal":
                         chunk["subtype"] = "terminal"
+                    elif message.name in ("commit_changes", "create_pr"):
+                        chunk["subtype"] = "git"
 
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:

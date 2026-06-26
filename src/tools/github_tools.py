@@ -16,6 +16,32 @@ def _branch_name(thread_id: str) -> str:
     return f"piper/{thread_id[:8]}"
 
 
+def _resolve_repo_file(repo_path: str, file_path: str) -> tuple[Path, str]:
+    """Return (absolute_path, repo_relative_path) for a file in the repo.
+
+    Handles both absolute indexer paths and relative paths gracefully so
+    git add always receives a repo-relative path regardless of what the
+    agent passes.
+    """
+    repo = Path(repo_path).resolve()
+    fp = Path(file_path)
+    if fp.is_absolute():
+        abs_path = fp
+    else:
+        # Try resolving relative to CWD first (agent often passes paths like
+        # "tmp/piper/xxx/repo/models/file.js" which are CWD-relative, not repo-relative)
+        cwd_resolved = fp.resolve()
+        if cwd_resolved.is_relative_to(repo):
+            abs_path = cwd_resolved
+        else:
+            abs_path = (repo / fp).resolve()
+    try:
+        rel = abs_path.relative_to(repo)
+    except ValueError:
+        rel = Path(file_path)
+    return abs_path, str(rel)
+
+
 @tool
 def clone_repo(config: Annotated[RunnableConfig, InjectedToolArg]) -> str:
     """Clone the bound GitHub repo into the thread workspace. Call first on repo-bound threads."""
@@ -71,7 +97,7 @@ def commit_changes(
     if not message or not file_path:
         raise ToolException("Missing message or file_path")
 
-    full_path = Path(repo_path) / file_path
+    full_path, rel_path = _resolve_repo_file(repo_path, file_path)
     if not full_path.exists():
         raise ToolException(
             f"File not found: {file_path}. Write it first with writeFile."
@@ -79,7 +105,7 @@ def commit_changes(
 
     try:
         subprocess.run(
-            ["git", "add", file_path],
+            ["git", "add", rel_path],
             cwd=repo_path,
             check=True,
             capture_output=True,

@@ -3,6 +3,8 @@ import os
 
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 
 # from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -130,8 +132,21 @@ NEVER DO THIS
 
 
 # Define LLM with bound tools
-llm = init_chat_model(model="google_genai:gemini-2.5-flash-lite")
-llm_with_tools = llm.bind_tools(tools)
+
+# 1. Initialize the primary model (e.g., Anthropic Claude)
+primary_model = init_chat_model(
+    model="google_genai:gemini-2.5-flash",
+)
+
+# 2. Initialize the backup fallback model (e.g., OpenAI GPT)
+backup_model = init_chat_model(
+    model="google_genai:gemini-2.5-flash-lite",
+)
+
+
+llm_with_fallback = primary_model.with_fallbacks([backup_model])
+
+llm_with_tools = llm_with_fallback.bind_tools(tools)
 
 
 def custom_error_handler(e: ToolException) -> str:
