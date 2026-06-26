@@ -1,8 +1,10 @@
+import os
 from pathlib import Path
-from langchain_core.tools import tool
-from langchain_core.tools.base import ToolException
+from typing import Annotated
+
 from langchain_core.runnables import RunnableConfig
-from pprint import pprint
+from langchain_core.tools import InjectedToolArg, tool
+from langchain_core.tools.base import ToolException
 
 
 def load_gitignore_patterns(root: Path) -> list[str]:
@@ -49,14 +51,16 @@ def is_ignored(path: Path, root: Path, patterns: list[str]) -> bool:
 @tool
 def indexer(
     filter: str = "*",
-    config: RunnableConfig = None):
+    src: str | None = None,
+    config: Annotated[RunnableConfig, InjectedToolArg] = None,
+):
     """Returns the location of the files present in the repo, respecting .gitignore.
     Args:
         filter: glob pattern like index.js or *.js or **/*.py.
-        config: RunnableConfig
+        src: root directory to search (defaults to thread repo_path or cwd).
     """
-    root = Path(config.get('repo_path'))
-    pprint(root)
+    cfg = (config or {}).get("configurable") or {}
+    root = Path(src or cfg.get("repo_path") or os.getcwd())
     if filter == "*":
         raise ValueError("Filter too broad, use something like *.js")
 

@@ -1,109 +1,142 @@
-from langchain_core.tools import tool
-from langchain_core.tools.base import ToolException
+from pathlib import Path
+from typing import Annotated
+
+import subprocess
 from github import Github
 from langchain_core.runnables import RunnableConfig
-from pprint import pprint
-import subprocess
+from langchain_core.tools import InjectedToolArg, tool
+from langchain_core.tools.base import ToolException
+
+
+def _cfg(config: RunnableConfig) -> dict:
+    return config.get("configurable") or {}
+
+
+def _branch_name(thread_id: str) -> str:
+    return f"piper/{thread_id[:8]}"
 
 
 @tool
-def clone_repo(config: RunnableConfig):
-    """Clones a GitHub repository.
-        Args:
-        config: RunnableConfig
-    """
-    cfg = config.get("configurable")
-    if not cfg or not cfg.get("repo_path") or not cfg.get("github_token"):
-        raise ToolException("Missing repo_path or github_token")
-
-    repo = cfg.get("repo")
+def clone_repo(config: Annotated[RunnableConfig, InjectedToolArg]) -> str:
+    """Clone the bound GitHub repo into the thread workspace. Call first on repo-bound threads."""
+    cfg = _cfg(config)
+    repo_name = cfg.get("repo")
     repo_path = cfg.get("repo_path")
     token = cfg.get("github_token")
+    thread_id = cfg.get("thread_id", "")
+
+    if not repo_name or not repo_path or not token:
+        raise ToolException("Missing repo, repo_path, or github_token")
+
+    dest = Path(repo_path)
+    if (dest / ".git").exists():
+        return f"Repository already cloned at {repo_path}"
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    branch = _branch_name(thread_id)
 
     try:
-        g = Github(token)
-        repo = g.get_repo(repo)
-        pprint(repo, "repo")
-        result = subprocess.run(
-            ["git", "clone", f"https://{token}@github.com/{repo}.git", repo_path],
+        subprocess.run(
+            ["git", "clone", f"https://{token}@github.com/{repo_name}.git", str(dest)],
             check=True,
+            capture_output=True,
+            text=True,
         )
-        pprint(result, "result")
-    except Exception as e:
-        pprint(e, "error")
-        raise ToolException(f"Error in cloning repository: {e}")
+        subprocess.run(
+            ["git", "checkout", "-b", branch],
+            cwd=str(dest),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or e.stdout or str(e)).strip()
+        raise ToolException(f"Error cloning repository: {detail}")
 
-    return f"Repository cloned to {repo_path} successfully"
+    return f"Repository cloned to {repo_path} on branch {branch}"
+
 
 @tool
-def commit_changes(message: str, file_path: str, content: str, config: RunnableConfig):
-    """Commits changes to a file in a GitHub repository.
-            Args:
-            message: The commit message
-            file_path: The path to the file to commit the changes to
-            content: The content to commit to the file
-            config: RunnableConfig
-        """
-    cfg = config.get("configurable")
-    if not cfg or not cfg.get("repo_path") or not cfg.get("github_token"):
-        raise ToolException("Missing repo_path or github_token")
-
+def commit_changes(
+    message: str,
+    file_path: str,
+    config: Annotated[RunnableConfig, InjectedToolArg],
+) -> str:
+    """Commit local file changes in the cloned repo after writeFile."""
+    cfg = _cfg(config)
     repo_path = cfg.get("repo_path")
-    token = config.get("github_token")
-    if not repo_path or not token:
-        raise ToolException("Missing repo_path or github_token")
 
-    if not file_path or not content:
-        raise ToolException("Missing file_path or content in commit_changes")
+    if not repo_path:
+        raise ToolException("Missing repo_path")
+    if not message or not file_path:
+        raise ToolException("Missing message or file_path")
+
+    full_path = Path(repo_path) / file_path
+    if not full_path.exists():
+        raise ToolException(
+            f"File not found: {file_path}. Write it first with writeFile."
+        )
 
     try:
-        g = Github(token)
-        repo = g.get_repo(repo_path)
-        contents = repo.get_contents(file_path, ref="main")
-
-        repo.update_file(
-            path=contents.path,
-            message=message,
-            content=content,
-            sha=contents.sha,
-            branch="main"
+        subprocess.run(
+            ["git", "add", file_path],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+            text=True,
         )
-    except Exception as e:
-        raise ToolException(f"Error in committing changes: {e}")
-    return f"Changes committed to {file_path} successfully"
+        result = subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or e.stdout or str(e)).strip()
+        raise ToolException(f"Error committing changes: {detail}")
+
+    return result.stdout.strip() or f"Changes committed for {file_path}"
+
 
 @tool
-def create_pr(title: str, description: str, config: RunnableConfig):
-    """Creates a pull request in a GitHub repository.
-        Args:
-        title: The title of the pull request
-        description: The description of the pull request
-        config: RunnableConfig
-    """
-    cfg = config.get("configurable")
-    if not cfg or not cfg.get("repo_path") or not cfg.get("github_token"):
-        raise ToolException("Missing repo_path or github_token")
-
+def create_pr(
+    title: str,
+    description: str,
+    config: Annotated[RunnableConfig, InjectedToolArg],
+) -> str:
+    """Push the piper branch and open a pull request."""
+    cfg = _cfg(config)
+    repo_name = cfg.get("repo")
     repo_path = cfg.get("repo_path")
-    token = config.get("github_token")
+    token = cfg.get("github_token")
+    thread_id = cfg.get("thread_id", "")
 
-    BASE_BRANCH = 'main'
-    NEW_BRANCH = f"piper/{config.get('thread_id')[:8]}"
+    if not repo_name or not repo_path or not token:
+        raise ToolException("Missing repo, repo_path, or github_token")
 
-    if not repo_path or not token:
-        raise ToolException("Missing repo_path or github_token")
+    head_branch = _branch_name(thread_id)
 
     try:
-        g = Github(token)
-        repo = g.get_repo(repo_path)
-
+        subprocess.run(
+            ["git", "push", "-u", "origin", head_branch],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        gh = Github(token)
+        repo = gh.get_repo(repo_name)
         pr = repo.create_pull(
             title=title,
             body=description,
-            head=NEW_BRANCH,
-            base=BASE_BRANCH,
-            draft=False
+            head=head_branch,
+            base=repo.default_branch,
         )
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or e.stdout or str(e)).strip()
+        raise ToolException(f"Error pushing branch: {detail}")
     except Exception as e:
-        raise ToolException(f"Error in creating PR: {e}")
+        raise ToolException(f"Error creating PR: {e}")
+
     return f"PR created successfully: {pr.html_url}"

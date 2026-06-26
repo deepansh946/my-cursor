@@ -16,7 +16,6 @@ from src.tools.readFile import readFile
 from src.tools.terminal import terminal
 from src.tools.writeFile import writeFile
 from src.tools.github_tools import clone_repo, commit_changes, create_pr
-from pprint import pprint
 
 # from src.tools.stackoverflow import stackoverflow
 
@@ -28,8 +27,6 @@ src = os.getcwd()
 
 
 def build_system_prompt(workspace: str, has_repo: bool) -> str:
-    pprint(workspace, "workspace")
-    pprint(has_repo, "has_repo")
     repo_workflow = ""
     if has_repo:
         repo_workflow = f"""
@@ -50,7 +47,7 @@ For FILE TASKS on a repo-bound thread:
 5. terminal(command=<verify command>, cwd="{workspace}") if needed
 
 To save work:
-- commit_changes(message, file_path, content) after edits
+- commit_changes(message, file_path) after writeFile edits
 - create_pr(title, description) when user asks for a PR
 
 NEVER call indexer/readFile/writeFile/terminal for repo files before clone_repo().
@@ -82,7 +79,7 @@ TERMINAL RULES
 EXAMPLES:
   User: "show me node version"     → terminal(command="node --version", cwd="{workspace}")
   User: "show me App.css"          → clone_repo() then indexer(filter="*App.css", src="{workspace}") then readFile
-  User: "commit my changes"        → commit_changes(...)
+  User: "commit my changes"        → commit_changes(message=..., file_path=...)
   User: "open a PR"                → create_pr(title=..., description=...)
 
 ═══════════════════════════════════════
@@ -144,12 +141,9 @@ def custom_error_handler(e: ToolException) -> str:
 def call_model(state: MessagesState, config: RunnableConfig):
     cfg = config.get("configurable", {})
     repo_path = cfg.get("repo_path")
-    pprint(repo_path, "repo_path")
     workspace = repo_path if repo_path else src
-    pprint(workspace, "workspace")
     has_repo = bool(cfg.get("repo"))
     sys_msg = SystemMessage(content=build_system_prompt(workspace, has_repo))
-    pprint(sys_msg, "sys_msg")
     messages = [sys_msg] + state["messages"]
     response = llm_with_tools.invoke(messages)
 

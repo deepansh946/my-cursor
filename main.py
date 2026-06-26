@@ -35,6 +35,17 @@ class ChatRequest(BaseModel):
     repo: str | None
 
 
+def _thread_workspace(thread_id: str) -> Path:
+    return Path(f"tmp/piper/{thread_id[:8]}")
+
+
+def _repo_path(thread_id: str, repo: str | None) -> str | None:
+    if not repo:
+        return None
+    slug = repo.replace("/", "_")
+    return str(_thread_workspace(thread_id) / slug)
+
+
 def _serialize_checkpoint_messages(thread_id: str, messages: list) -> list[dict]:
     """Align checkpoint state with the UI message shape (same fields as SSE chunks)."""
     out: list[dict] = []
@@ -79,7 +90,7 @@ def _serialize_checkpoint_messages(thread_id: str, messages: list) -> list[dict]
 
 @app.delete("/thread/{thread_id}")
 async def delete_thread(thread_id: str):
-    clone_path = Path(f"tmp/piper/{thread_id[:8]}")
+    clone_path = _thread_workspace(thread_id)
     if _checkpointer is None:
         raise HTTPException(status_code=503, detail="Checkpointer not ready")
     if clone_path.exists():
@@ -103,7 +114,7 @@ def thread_messages(thread_id: str):
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    repo_path = f"tmp/piper/{request.thread_id[:8]}/{request.repo}" if request.repo else None
+    repo_path = _repo_path(request.thread_id, request.repo)
     input_data = {"messages": [request.message]}
     config = {"configurable": {"thread_id": request.thread_id, "repo_path": repo_path, "repo": request.repo, "github_token": request.github_token}}
     async def event_stream():
