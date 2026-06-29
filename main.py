@@ -214,3 +214,7 @@ async def get_github_repos(request: Request):
     repos = [{"name": r.name, "full_name": r.full_name, "private": r.private, "html_url": r.html_url} for r in user.get_repos()]
 
     return {"repos": repos}
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

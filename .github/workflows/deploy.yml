@@ -1,0 +1,36 @@
+name: Deploy API
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to DigitalOcean
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+
+          script: |
+            set -e
+
+            cd /opt/piper/api
+
+            git fetch origin
+            git reset --hard origin/main
+
+            ~/.local/bin/uv sync
+
+            sudo systemctl restart piper-api
+
+            sudo systemctl status piper-api --no-pager
