@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from github import Github
 
 from src.agent.graph import builder
+from src.agent.usage import set_empty_usage, get_usage, clear_usage
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,62 @@ def _serialize_checkpoint_messages(thread_id: str, messages: list) -> list[dict]
     return out
 
 
+def _graph_config(thread_id: str, repo: str | None, github_token: str | None) -> dict:
+    repo_path = _repo_path(thread_id, repo)
+    return {
+        "configurable": {
+            "thread_id": thread_id,
+            "repo_path": repo_path,
+            "repo": repo,
+            "github_token": github_token,
+        }
+    }
+
+
+def _message_chunk(message, metadata: dict) -> dict | None:
+    content = _content_to_str(message.content)
+    if not content.strip():
+        return None
+    msg_type = message.__class__.__name__
+    chunk: dict = {
+        "type": msg_type,
+        "content": content,
+        "node": metadata.get("langgraph_node", ""),
+    }
+    if hasattr(message, "name") and message.name:
+        chunk["tool_name"] = message.name
+        if message.name == "terminal":
+            chunk["subtype"] = "terminal"
+        elif message.name in ("commit_changes", "create_pr"):
+            chunk["subtype"] = "git"
+    return chunk
+
+
+async def _stream_graph(graph_input, config: dict):
+    try:
+        async for message, metadata in graph.astream(
+            graph_input,
+            config=config,
+            stream_mode="messages",
+        ):
+            chunk = _message_chunk(message, metadata)
+            if chunk:
+                yield chunk
+    except Exception as e:
+        yield {"type": "error", "content": str(e)}
+    finally:
+        usage_data = get_usage(config)
+        if usage_data.get("input_tokens") or usage_data.get("output_tokens"):
+            yield {
+                "type": "usage",
+                "input_tokens": usage_data.get("input_tokens", 0),
+                "output_tokens": usage_data.get("output_tokens", 0),
+                "total_tokens": usage_data.get("total_tokens", 0),
+            }
+
+        yield {"type": "done"}
+
+
 @app.delete("/thread/{thread_id}")
 async def delete_thread(thread_id: str):
     clone_path = _thread_workspace(thread_id)
@@ -138,6 +195,7 @@ async def delete_thread(thread_id: str):
     if clone_path.exists():
         shutil.rmtree(clone_path)
     await _checkpointer.adelete_thread(thread_id)
+    clear_usage(thread_id)
     return {"ok": True}
 
 
@@ -159,46 +217,20 @@ async def thread_messages(thread_id: str):
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    repo_path = _repo_path(request.thread_id, request.repo)
+    config = _graph_config(request.thread_id, request.repo, request.github_token)
+    set_empty_usage(config)
     input_data = {"messages": [HumanMessage(content=request.message)]}
-    config = {"configurable": {"thread_id": request.thread_id, "repo_path": repo_path, "repo": request.repo, "github_token": request.github_token}}
+
     async def event_stream():
-        try:
-            async for message, metadata in graph.astream(
-                input_data, config=config, stream_mode="messages"
-            ):
-                # Filter out empty or system messages
-                if not message.content:
-                    continue
-
-                msg_type = (
-                    message.__class__.__name__
-                )  # AIMessage, ToolMessage, HumanMessage
-                node = metadata.get("langgraph_node", "")
-
-                chunk = {
-                    "type": msg_type,
-                    "content": _content_to_str(message.content),
-                    "node": node,
-                }
-
-                # For ToolMessage, include tool name if available
-                if hasattr(message, "name") and message.name:
-                    chunk["tool_name"] = message.name
-
-                    if message.name == "terminal":
-                        chunk["subtype"] = "terminal"
-                    elif message.name in ("commit_changes", "create_pr"):
-                        chunk["subtype"] = "git"
-
+        async for chunk in _stream_graph(input_data, config):
+            if not chunk:
+                continue
+            if chunk.get("type") == "done":
+                yield "data: [DONE]\n\n"
+            else:
                 yield f"data: {json.dumps(chunk)}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
-
-        yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
-
 
 
 @app.get("/github/repos")

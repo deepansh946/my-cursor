@@ -79,7 +79,7 @@ def clone_repo(config: Annotated[RunnableConfig, InjectedToolArg]) -> str:
         detail = (e.stderr or e.stdout or str(e)).strip()
         raise ToolException(f"Error cloning repository: {detail}")
 
-    return f"Repository cloned to {repo_path} on branch {branch}"
+    return "Repository cloned successfully."
 
 
 @tool
@@ -88,7 +88,7 @@ def commit_changes(
     file_path: str,
     config: Annotated[RunnableConfig, InjectedToolArg],
 ) -> str:
-    """Commit local file changes in the cloned repo after writeFile."""
+    """Commit local file changes in the cloned repo. Only call when the user explicitly asks to commit or save to git."""
     cfg = _cfg(config)
     repo_path = cfg.get("repo_path")
 
@@ -105,7 +105,7 @@ def commit_changes(
 
     try:
         subprocess.run(
-            ["git", "add", rel_path],
+            ["git", "add", '.'],
             cwd=repo_path,
             check=True,
             capture_output=True,
@@ -122,7 +122,7 @@ def commit_changes(
         detail = (e.stderr or e.stdout or str(e)).strip()
         raise ToolException(f"Error committing changes: {detail}")
 
-    return result.stdout.strip() or f"Changes committed for {file_path}"
+    return result.stdout.strip() or "Changes committed successfully."
 
 
 @tool
@@ -131,7 +131,7 @@ def create_pr(
     description: str,
     config: Annotated[RunnableConfig, InjectedToolArg],
 ) -> str:
-    """Push the piper branch and open a pull request."""
+    """Push the piper branch and open a pull request. Only call when the user explicitly asks to open/create a PR."""
     cfg = _cfg(config)
     repo_name = cfg.get("repo")
     repo_path = cfg.get("repo_path")
