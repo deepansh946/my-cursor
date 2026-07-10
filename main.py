@@ -4,7 +4,9 @@ import logging
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -27,9 +29,36 @@ logger = logging.getLogger(__name__)
 
 _API_DIR = Path(__file__).resolve().parent
 _CHECKPOINT_DB = str(_API_DIR / "piper.db")
+_TMP_ROOT = _API_DIR / "tmp" / "piper"
+_MAX_AGE_DAYS = 180
 
 graph = None
 _checkpointer = None
+
+
+def _purge_old_workspaces() -> None:
+    if not _TMP_ROOT.exists():
+        return
+    cutoff = time.time() - _MAX_AGE_DAYS * 86400
+    for thread_dir in _TMP_ROOT.iterdir():
+        if not thread_dir.is_dir():
+            continue
+        if thread_dir.stat().st_mtime < cutoff:
+            thread_id = thread_dir.name
+            shutil.rmtree(thread_dir, ignore_errors=True)
+            logger.info("Purged workspace for thread %s", thread_id)
+            try:
+                with sqlite3.connect(_CHECKPOINT_DB) as conn:
+                    conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+                    conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
+            except Exception:
+                logger.exception("DB cleanup failed for thread %s", thread_id)
+
+
+async def _cleanup_loop() -> None:
+    while True:
+        await asyncio.sleep(24 * 3600)
+        await asyncio.to_thread(_purge_old_workspaces)
 
 
 @asynccontextmanager
@@ -38,8 +67,12 @@ async def lifespan(app: FastAPI):
     async with AsyncSqliteSaver.from_conn_string(_CHECKPOINT_DB) as checkpointer:
         _checkpointer = checkpointer
         graph = builder.compile(checkpointer=checkpointer)
-        yield
-        _checkpointer = None
+        cleanup_task = asyncio.create_task(_cleanup_loop())
+        try:
+            yield
+        finally:
+            cleanup_task.cancel()
+            _checkpointer = None
 
 
 app = FastAPI(title="Langgraph API", lifespan=lifespan)
