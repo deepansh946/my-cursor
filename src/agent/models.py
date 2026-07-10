@@ -66,7 +66,9 @@ LLM_MODELS = [
 _ALLOWED_IDS = {m["id"] for m in LLM_MODELS}
 
 
-def classify_complexity(text: str) -> str:
+def classify_complexity(text: str, has_repo: bool = False) -> str:
+    if has_repo:
+        return COMPLEX_MODEL_ID
     words = text.lower().split()
     if "```" in text or "`" in text:
         return COMPLEX_MODEL_ID

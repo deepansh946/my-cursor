@@ -11,7 +11,13 @@ from langchain_core.tools.base import ToolException
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from src.agent.models import DEFAULT_MODEL_ID, classify_complexity, get_llm
+from src.agent.models import (
+    COMPLEX_MODEL_ID,
+    DEFAULT_MODEL_ID,
+    SIMPLE_MODEL_ID,
+    classify_complexity,
+    get_llm,
+)
 from src.agent.prompt import build_system_prompt
 from src.agent.usage import merge_usage
 from src.tools.github_tools import clone_repo, commit_changes, create_pr
@@ -55,10 +61,12 @@ def call_model(state: MessagesState, config: RunnableConfig):
                 )
             else:
                 text = str(text)
-        model_id = classify_complexity(text or "")
+        model_id = classify_complexity(text or "", has_repo=has_repo)
 
     logger.debug("Using model: %s", model_id)
-    llm_with_tools = get_llm(model_id).bind_tools(tools)
+    primary = get_llm(model_id)
+    fallback_id = SIMPLE_MODEL_ID if model_id != SIMPLE_MODEL_ID else COMPLEX_MODEL_ID
+    llm_with_tools = primary.with_fallbacks([get_llm(fallback_id)]).bind_tools(tools)
     sys_msg = SystemMessage(content=build_system_prompt(workspace, has_repo))
     messages = [sys_msg] + state["messages"]
     response = llm_with_tools.invoke(messages, config=config)
