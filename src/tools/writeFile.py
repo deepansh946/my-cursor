@@ -1,21 +1,30 @@
-from langchain_core.tools import tool
+from typing import Annotated
+
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import InjectedToolArg, tool
 from langchain_core.tools.base import ToolException
+
+from src.tools.paths import display_path, resolve_workspace_path
 
 
 @tool
-def writeFile(content: str, src: str) -> bool | str | None:
+def writeFile(
+    content: str,
+    src: str,
+    config: Annotated[RunnableConfig, InjectedToolArg] = None,
+) -> bool | str | None:
     """Write the file content at src.
 
     Args:
         content: string
         src: string
     """
+    path = resolve_workspace_path(src, config)
 
     try:
-        with open(src, "w") as f:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
             f.write(content)
         return True
-    except FileNotFoundError:
-        raise ToolException(f"Error: File not found at {src}")
     except Exception as e:
-        raise ToolException(f"Error in writing file: {e}")
+        raise ToolException(f"Error writing file {display_path(src)}: {e}")

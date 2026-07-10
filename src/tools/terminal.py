@@ -1,21 +1,35 @@
 import subprocess
-from langchain_core.tools import tool
+from typing import Annotated
+
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import InjectedToolArg, tool
 from langchain_core.tools.base import ToolException
 
 
 @tool
-def terminal(command: str, cwd: str | None) -> str | None:
+def terminal(
+    command: str,
+    config: Annotated[RunnableConfig, InjectedToolArg],
+    cwd: str | None = None,
+) -> str | None:
     """Execute a shell command and return its output.
-    Use this to run commands like npm install, pip install, scripts, ls, cat etc
+    Use this to run commands like npm install, pip install, scripts, ls, cat etc.
 
     Args:
         command: The command to execute
-        cwd: Working directory to run the command
+        cwd: Working directory to run the command (defaults to repo_path)
     """
+    cfg = (config or {}).get("configurable") or {}
+    effective_cwd = cwd or cfg.get("repo_path") or None
 
     try:
         result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, cwd=cwd, timeout=60
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=effective_cwd,
+            timeout=60,
         )
 
         output = ""
