@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools.base import ToolException
 
 _WORKSPACE_MARKER = "tmp/piper/"
 
@@ -12,25 +13,32 @@ def workspace_root(config: RunnableConfig | None) -> Path:
 
 
 def resolve_workspace_path(src: str, config: RunnableConfig | None) -> Path:
+    root = workspace_root(config).resolve()
     path = Path(src)
-    if path.is_absolute():
-        return path
-
-    root = workspace_root(config)
     normalized = src.replace("\\", "/")
 
-    # Strip repo_path prefix if LLM passes the full workspace-relative path
-    root_str = str(root).replace("\\", "/").rstrip("/") + "/"
-    if normalized.startswith(root_str):
-        normalized = normalized[len(root_str):]
-    elif _WORKSPACE_MARKER in normalized:
-        idx = normalized.find(_WORKSPACE_MARKER)
-        rest = normalized[idx + len(_WORKSPACE_MARKER):]
-        parts = rest.split("/", 2)
-        if len(parts) >= 3 and parts[2]:
-            normalized = parts[2]
+    if path.is_absolute():
+        # Strip absolute prefix if it points inside the workspace; else reject
+        root_str = str(root).replace("\\", "/").rstrip("/") + "/"
+        if normalized.startswith(root_str):
+            normalized = normalized[len(root_str) :]
+        else:
+            raise ToolException("Access denied: path outside workspace")
+    else:
+        root_str = str(root).replace("\\", "/").rstrip("/") + "/"
+        if normalized.startswith(root_str):
+            normalized = normalized[len(root_str) :]
+        elif _WORKSPACE_MARKER in normalized:
+            idx = normalized.find(_WORKSPACE_MARKER)
+            rest = normalized[idx + len(_WORKSPACE_MARKER) :]
+            parts = rest.split("/", 2)
+            if len(parts) >= 3 and parts[2]:
+                normalized = parts[2]
 
-    return root / normalized
+    resolved = (root / normalized).resolve()
+    if not resolved.is_relative_to(root):
+        raise ToolException("Access denied: path outside workspace")
+    return resolved
 
 
 def display_path(path: str) -> str:

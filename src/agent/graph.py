@@ -1,28 +1,30 @@
 # from langchain_core.load import dumps, loads
+import logging
 import os
 
 from dotenv import load_dotenv
 
-
 # from langchain.agents import create_agent
 from langchain_core.messages import SystemMessage
-from langchain_core.tools.base import ToolException
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools.base import ToolException
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
+from src.agent.models import DEFAULT_MODEL_ID, classify_complexity, get_llm
+from src.agent.prompt import build_system_prompt
+from src.agent.usage import merge_usage
+from src.tools.github_tools import clone_repo, commit_changes, create_pr
 from src.tools.indexer import indexer
 from src.tools.readFile import readFile
 from src.tools.terminal import terminal
 from src.tools.writeFile import writeFile
-from src.tools.github_tools import clone_repo, commit_changes, create_pr
-from src.agent.models import DEFAULT_MODEL_ID, classify_complexity, get_llm
-from src.agent.prompt import build_system_prompt
-from src.agent.usage import merge_usage
 
 # from src.tools.stackoverflow import stackoverflow
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 tools = [terminal, indexer, readFile, writeFile, clone_repo, commit_changes, create_pr]
 
@@ -46,13 +48,16 @@ def call_model(state: MessagesState, config: RunnableConfig):
             None,
         )
         text = last_human.content if last_human else ""
-        if isinstance(text, list):
-            text = " ".join(
-                b.get("text", "") for b in text if isinstance(b, dict)
-            )
+        if not isinstance(text, str):
+            if isinstance(text, list):
+                text = " ".join(
+                    b.get("text", "") for b in text if isinstance(b, dict)
+                )
+            else:
+                text = str(text)
         model_id = classify_complexity(text or "")
 
-    print(f"Using model: {model_id}")
+    logger.debug("Using model: %s", model_id)
     llm_with_tools = get_llm(model_id).bind_tools(tools)
     sys_msg = SystemMessage(content=build_system_prompt(workspace, has_repo))
     messages = [sys_msg] + state["messages"]

@@ -26,5 +26,7 @@ def writeFile(
         with open(path, "w") as f:
             f.write(content)
         return True
+    except ToolException:
+        raise
     except Exception as e:
         raise ToolException(f"Error writing file {display_path(src)}: {e}")

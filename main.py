@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 from contextlib import asynccontextmanager
@@ -70,7 +71,12 @@ class CloneRequest(BaseModel):
     github_token: str | None
 
 
+_THREAD_ID_RE = re.compile(r"^[A-Za-z0-9\-]{1,64}$")
+
+
 def _thread_workspace(thread_id: str) -> Path:
+    if not _THREAD_ID_RE.match(thread_id):
+        raise HTTPException(status_code=400, detail="Invalid thread ID")
     return Path(f"tmp/piper/{thread_id}")
 
 
