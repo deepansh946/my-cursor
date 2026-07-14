@@ -49,6 +49,7 @@ def _purge_old_workspaces() -> None:
             logger.info("Purged workspace for thread %s", thread_id)
             try:
                 with sqlite3.connect(_CHECKPOINT_DB) as conn:
+                    conn.execute("PRAGMA busy_timeout = 5000")
                     conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
                     conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
             except Exception:
