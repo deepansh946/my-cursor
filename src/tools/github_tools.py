@@ -51,8 +51,8 @@ def clone_repo(config: Annotated[RunnableConfig, InjectedToolArg]) -> str:
     token = cfg.get("github_token")
     thread_id = cfg.get("thread_id", "")
 
-    if not repo_name or not repo_path or not token:
-        raise ToolException("Missing repo, repo_path, or github_token")
+    if not repo_name or not repo_path:
+        raise ToolException("Missing repo or repo_path")
 
     dest = Path(repo_path)
     if (dest / ".git").exists():
@@ -60,10 +60,15 @@ def clone_repo(config: Annotated[RunnableConfig, InjectedToolArg]) -> str:
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     branch = _branch_name(thread_id)
+    clone_url = (
+        f"https://{token}@github.com/{repo_name}.git"
+        if token
+        else f"https://github.com/{repo_name}.git"
+    )
 
     try:
         subprocess.run(
-            ["git", "clone", f"https://{token}@github.com/{repo_name}.git", str(dest)],
+            ["git", "clone", clone_url, str(dest)],
             check=True,
             capture_output=True,
             text=True,
@@ -138,8 +143,13 @@ def create_pr(
     token = cfg.get("github_token")
     thread_id = cfg.get("thread_id", "")
 
-    if not repo_name or not repo_path or not token:
-        raise ToolException("Missing repo, repo_path, or github_token")
+    if not repo_name or not repo_path:
+        raise ToolException("Missing repo or repo_path")
+    if not token:
+        raise ToolException(
+            "GitHub sign-in required to create a pull request. "
+            "Sign in at /login to connect your GitHub account."
+        )
 
     head_branch = _branch_name(thread_id)
 

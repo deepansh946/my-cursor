@@ -80,9 +80,14 @@ terminal()
     if plan_mode:
         prompt += (
             "\nPLAN MODE — Do NOT call writeFile, commit_changes, or create_pr. "
-            "Explore the codebase with indexer, readFile, terminal (read-only), and clone_repo. "
-            "Then output a detailed implementation plan in markdown: "
-            "which files to change, what to change, and why. "
-            "End with a single line: 'Ready to apply.'\n"
+            "You may explore with indexer, readFile, terminal (read-only), and clone_repo. "
+            "Then output the plan as markdown for the user. "
+            "Plan format rules (strict):\n"
+            "- NEVER mention tool names or tool calls (no clone_repo, indexer, readFile, "
+            "writeFile, terminal, or similar).\n"
+            "- Structure the plan as one section per file that will change.\n"
+            "- For each file: path, then bullets of concrete edits (what code to add/change/remove).\n"
+            "- No workflow/setup steps — only intended file changes and why.\n"
+            "- End with a single line: 'Ready to apply.'\n"
         )
     return prompt
