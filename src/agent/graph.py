@@ -46,6 +46,7 @@ def call_model(state: MessagesState, config: RunnableConfig):
     repo_path = cfg.get("repo_path")
     workspace = repo_path if repo_path else src
     has_repo = bool(cfg.get("repo"))
+    plan_mode = bool(cfg.get("plan_mode", False))
     model_id = cfg.get("model_id") or DEFAULT_MODEL_ID
 
     if model_id == "auto":
@@ -66,8 +67,10 @@ def call_model(state: MessagesState, config: RunnableConfig):
     logger.debug("Using model: %s", model_id)
     primary = get_llm(model_id)
     fallback_id = SIMPLE_MODEL_ID if model_id != SIMPLE_MODEL_ID else COMPLEX_MODEL_ID
-    llm_with_tools = primary.with_fallbacks([get_llm(fallback_id)]).bind_tools(tools)
-    sys_msg = SystemMessage(content=build_system_prompt(workspace, has_repo))
+    plan_tools = [terminal, indexer, readFile, clone_repo]
+    active_tools = plan_tools if plan_mode else tools
+    llm_with_tools = primary.with_fallbacks([get_llm(fallback_id)]).bind_tools(active_tools)
+    sys_msg = SystemMessage(content=build_system_prompt(workspace, has_repo, plan_mode))
     messages = [sys_msg] + state["messages"]
     response = llm_with_tools.invoke(messages, config=config)
 

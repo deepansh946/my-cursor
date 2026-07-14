@@ -98,6 +98,7 @@ class ChatRequest(BaseModel):
     github_token: str | None
     repo: str | None
     model_id: str | None
+    plan_mode: bool = False
 
 
 class CloneRequest(BaseModel):
@@ -265,6 +266,7 @@ def _graph_config(
     model_id: str | None,
     repo: str | None,
     github_token: str | None,
+    plan_mode: bool = False,
 ) -> dict:
     repo_path = _repo_path(thread_id, repo)
     return {
@@ -274,6 +276,7 @@ def _graph_config(
             "repo": repo,
             "github_token": github_token,
             "model_id": model_id or DEFAULT_MODEL_ID,
+            "plan_mode": plan_mode,
         }
     }
 
@@ -323,6 +326,8 @@ async def _stream_graph(graph_input, config: dict):
                 "total_tokens": usage_data.get("total_tokens", 0),
             }
 
+        if config.get("configurable", {}).get("plan_mode"):
+            yield {"type": "plan_complete"}
         yield {"type": "done"}
 
 
@@ -421,7 +426,11 @@ async def chat_endpoint(request: ChatRequest):
     if not is_allowed_model(model_id):
         raise HTTPException(status_code=400, detail="Invalid model ID")
     config = _graph_config(
-        request.thread_id, model_id, request.repo, request.github_token
+        request.thread_id,
+        model_id,
+        request.repo,
+        request.github_token,
+        plan_mode=request.plan_mode,
     )
     set_empty_usage(config)
     input_data = {"messages": [HumanMessage(content=request.message)]}

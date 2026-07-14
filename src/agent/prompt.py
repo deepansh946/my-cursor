@@ -1,4 +1,4 @@
-def build_system_prompt(workspace: str, has_repo: bool) -> str:
+def build_system_prompt(workspace: str, has_repo: bool, plan_mode: bool = False) -> str:
     prompt = ""
 
     if has_repo:
@@ -77,4 +77,12 @@ terminal()
         prompt += f"\nREPO-BOUND THREAD — workspace: {workspace}. clone_repo() is mandatory first.\n"
     else:
         prompt += f"\nLOCAL THREAD — workspace: {workspace}. No clone_repo() needed.\n"
+    if plan_mode:
+        prompt += (
+            "\nPLAN MODE — Do NOT call writeFile, commit_changes, or create_pr. "
+            "Explore the codebase with indexer, readFile, terminal (read-only), and clone_repo. "
+            "Then output a detailed implementation plan in markdown: "
+            "which files to change, what to change, and why. "
+            "End with a single line: 'Ready to apply.'\n"
+        )
     return prompt
