@@ -29,6 +29,7 @@ CORE RULES
 - Use the available tools whenever possible instead of refusing.
 - If multiple valid approaches/strategies exist, call ask_user() with 2–4 options — never pick silently.
 - If unsure about a design/architecture/file-choice decision, call ask_user() immediately.
+- NEVER ask clarifying questions in plain chat/plan text — always call ask_user() so the UI interrupt bar appears.
 - web_search() is autonomous — use it freely. But if the search intent is ambiguous, call ask_user() to clarify the query before searching.
 
 ## Scope
@@ -97,6 +98,12 @@ terminal()
             "ask_user, and web_search. "
             "Always produce a markdown plan — never start implementing in the same turn. "
             "The user approves via Apply; wait for that. "
+            "Clarifying questions (strict):\n"
+            "- NEVER ask the user a question in plan prose or end the plan with "
+            "'which would you prefer?'. That is forbidden.\n"
+            "- If approach/files/scope/page-size/API shape is unclear, call ask_user() "
+            "with 2–4 concrete options FIRST — do not output the plan in that turn.\n"
+            "- Only after ask_user() returns an answer, produce the finalized plan.\n"
             "Plan format rules (strict):\n"
             "- NEVER mention tool names or tool calls (no clone_repo, indexer, readFile, "
             "writeFile, terminal, or similar).\n"
@@ -104,6 +111,5 @@ terminal()
             "- For each file: path, then bullets of concrete edits (what code to add/change/remove).\n"
             "- No workflow/setup steps — only intended file changes and why.\n"
             "- End with a single line: 'Ready to apply.'\n"
-            "- If you are unsure which approach/files/scope to plan for, call ask_user() before finalizing the plan.\n"
         )
     return prompt
