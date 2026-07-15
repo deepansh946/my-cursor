@@ -6,6 +6,7 @@ from github import Github
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolArg, tool
 from langchain_core.tools.base import ToolException
+from langgraph.types import interrupt
 
 
 def _cfg(config: RunnableConfig) -> dict:
@@ -14,32 +15,6 @@ def _cfg(config: RunnableConfig) -> dict:
 
 def _branch_name(thread_id: str) -> str:
     return f"piper/{thread_id[:8]}"
-
-
-def _resolve_repo_file(repo_path: str, file_path: str) -> tuple[Path, str]:
-    """Return (absolute_path, repo_relative_path) for a file in the repo.
-
-    Handles both absolute indexer paths and relative paths gracefully so
-    git add always receives a repo-relative path regardless of what the
-    agent passes.
-    """
-    repo = Path(repo_path).resolve()
-    fp = Path(file_path)
-    if fp.is_absolute():
-        abs_path = fp
-    else:
-        # Try resolving relative to CWD first (agent often passes paths like
-        # "tmp/piper/xxx/repo/models/file.js" which are CWD-relative, not repo-relative)
-        cwd_resolved = fp.resolve()
-        if cwd_resolved.is_relative_to(repo):
-            abs_path = cwd_resolved
-        else:
-            abs_path = (repo / fp).resolve()
-    try:
-        rel = abs_path.relative_to(repo)
-    except ValueError:
-        rel = Path(file_path)
-    return abs_path, str(rel)
 
 
 @tool
@@ -90,27 +65,28 @@ def clone_repo(config: Annotated[RunnableConfig, InjectedToolArg]) -> str:
 @tool
 def commit_changes(
     message: str,
-    file_path: str,
     config: Annotated[RunnableConfig, InjectedToolArg],
 ) -> str:
-    """Commit local file changes in the cloned repo. Only call when the user explicitly asks to commit or save to git."""
+    """Commit all local changes in the cloned repo in a single commit. Only call once when the user explicitly asks to commit or save to git."""
     cfg = _cfg(config)
     repo_path = cfg.get("repo_path")
 
     if not repo_path:
         raise ToolException("Missing repo_path")
-    if not message or not file_path:
-        raise ToolException("Missing message or file_path")
+    if not message:
+        raise ToolException("Missing message")
 
-    full_path, rel_path = _resolve_repo_file(repo_path, file_path)
-    if not full_path.exists():
-        raise ToolException(
-            f"File not found: {file_path}. Write it first with writeFile."
-        )
+    answer = interrupt({
+        "question": f"Commit all changes with message: '{message}'?",
+        "action": "commit",
+        "options": ["yes", "no"],
+    })
+    if str(answer).lower() not in ("yes", "y", "approve"):
+        return "Commit cancelled by user."
 
     try:
         subprocess.run(
-            ["git", "add", '.'],
+            ["git", "add", "."],
             cwd=repo_path,
             check=True,
             capture_output=True,
@@ -152,6 +128,14 @@ def create_pr(
         )
 
     head_branch = _branch_name(thread_id)
+
+    answer = interrupt({
+        "question": f"Push branch and open PR '{title}'?",
+        "action": "create_pr",
+        "options": ["yes", "no"],
+    })
+    if str(answer).lower() not in ("yes", "y", "approve"):
+        return "PR creation cancelled by user."
 
     try:
         subprocess.run(

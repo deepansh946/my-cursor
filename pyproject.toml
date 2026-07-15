@@ -24,6 +24,7 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=3.0.3",
     "aiosqlite>=0.22.1",
     "requests>=2.32.5",
+    "tavily-python>=0.5.0",
 ]
 
 

@@ -1,6 +1,7 @@
 # from langchain_core.load import dumps, loads
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -20,10 +21,12 @@ from src.agent.models import (
 )
 from src.agent.prompt import build_system_prompt
 from src.agent.usage import merge_usage
+from src.tools.askUser import ask_user
 from src.tools.github_tools import clone_repo, commit_changes, create_pr
 from src.tools.indexer import indexer
 from src.tools.readFile import readFile
 from src.tools.terminal import terminal
+from src.tools.webSearch import web_search
 from src.tools.writeFile import writeFile
 
 # from src.tools.stackoverflow import stackoverflow
@@ -32,7 +35,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-tools = [terminal, indexer, readFile, writeFile, clone_repo, commit_changes, create_pr]
+tools = [terminal, indexer, readFile, writeFile, clone_repo, commit_changes, create_pr, web_search, ask_user]
 
 src = os.getcwd()
 
@@ -67,10 +70,18 @@ def call_model(state: MessagesState, config: RunnableConfig):
     logger.debug("Using model: %s", model_id)
     primary = get_llm(model_id)
     fallback_id = SIMPLE_MODEL_ID if model_id != SIMPLE_MODEL_ID else COMPLEX_MODEL_ID
-    plan_tools = [terminal, indexer, readFile, clone_repo]
+    agents_md: str | None = None
+    agents_md_path = Path(workspace) / "AGENTS.md"
+    if agents_md_path.is_file():
+        try:
+            agents_md = agents_md_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    plan_tools = [terminal, indexer, readFile, clone_repo, ask_user, web_search]
     active_tools = plan_tools if plan_mode else tools
     llm_with_tools = primary.with_fallbacks([get_llm(fallback_id)]).bind_tools(active_tools)
-    sys_msg = SystemMessage(content=build_system_prompt(workspace, has_repo, plan_mode))
+    sys_msg = SystemMessage(content=build_system_prompt(workspace, has_repo, plan_mode, agents_md))
     messages = [sys_msg] + state["messages"]
     response = llm_with_tools.invoke(messages, config=config)
 

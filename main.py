@@ -17,6 +17,7 @@ from github import Github
 from langchain_core.messages import HumanMessage
 from langchain_core.tools.base import ToolException
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.types import Command
 from pydantic import BaseModel
 
 from src.agent.graph import builder
@@ -163,11 +164,14 @@ def _format_tool_target(tool_name: str | None, args: dict | None) -> str | None:
         text = str(cmd)
         return text if len(text) <= 60 else f"{text[:57]}..."
     if tool_name == "commit_changes":
-        fp = args.get("file_path")
-        return display_path(str(fp)) if fp else None
+        msg = args.get("message")
+        return str(msg) if msg else None
     if tool_name == "create_pr":
         title = args.get("title")
         return str(title) if title else None
+    if tool_name == "web_search":
+        q = args.get("query")
+        return str(q) if q else None
     return None
 
 
@@ -317,6 +321,23 @@ async def _stream_graph(graph_input, config: dict):
     except Exception as e:
         yield {"type": "error", "content": str(e)}
     finally:
+        try:
+            snap = await graph.aget_state(config)
+            if snap and snap.tasks:
+                for task in snap.tasks:
+                    for intr in (task.interrupts or []):
+                        payload = intr.value if hasattr(intr, "value") else {}
+                        if not isinstance(payload, dict):
+                            payload = {"question": str(payload), "action": "", "options": []}
+                        yield {
+                            "type": "interrupt",
+                            "question": payload.get("question", "Proceed?"),
+                            "action": payload.get("action", ""),
+                            "options": payload.get("options") or [],
+                        }
+        except Exception:
+            pass
+
         usage_data = get_usage(config)
         if usage_data.get("input_tokens") or usage_data.get("output_tokens"):
             yield {
@@ -418,6 +439,34 @@ async def clone_thread_repo(thread_id: str, request: CloneRequest):
         return {"ok": True, "message": result}
     except ToolException as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class ResumeRequest(BaseModel):
+    answer: str
+    model_id: str | None = None
+    repo: str | None = None
+    github_token: str | None = None
+    plan_mode: bool = False
+
+
+@app.post("/thread/{thread_id}/resume")
+async def resume_thread(thread_id: str, request: ResumeRequest):
+    config = _graph_config(
+        thread_id, request.model_id, request.repo,
+        request.github_token, plan_mode=request.plan_mode,
+    )
+    set_empty_usage(config)
+
+    async def event_stream():
+        async for chunk in _stream_graph(Command(resume=request.answer), config):
+            if not chunk:
+                continue
+            if chunk.get("type") == "done":
+                yield "data: [DONE]\n\n"
+            else:
+                yield f"data: {json.dumps(chunk)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/chat")

@@ -1,4 +1,4 @@
-def build_system_prompt(workspace: str, has_repo: bool, plan_mode: bool = False) -> str:
+def build_system_prompt(workspace: str, has_repo: bool, plan_mode: bool = False, agents_md: str | None = None) -> str:
     prompt = ""
 
     if has_repo:
@@ -10,19 +10,26 @@ TOOLS
 - readFile: read file contents. Only use paths returned by indexer.
 - writeFile: write/update file contents.
 - terminal: run shell commands in the workspace.
-- commit_changes: commit a file change to the repo.
+- commit_changes: commit all changed files in one commit. Call once — never once per file.
 - create_pr: open a pull request.
+- web_search: search the web for current docs, packages, or information not in the codebase.
+- ask_user: ask the human when multiple valid strategies exist or a decision is unclear. Pass concrete options.
 
 CORE RULES
 - Never guess a file path — always indexer() before readFile().
 - On repo-bound threads, clone_repo() must run before any indexer/readFile/writeFile/terminal call.
 - "version"/"installed"/"run"/"execute" -> terminal(). "files"/"find"/"where is" -> indexer().
 - commit_changes() and create_pr() are FORBIDDEN unless the user explicitly asks to commit, push, save to git, or open a PR.
+- commit_changes() must be called ONCE for all changed files in a single commit — never call it once per file.
+- Before calling create_pr(), always check for a PR template: try PULL_REQUEST_TEMPLATE.md then .github/pull_request_template.md. If found, read it and fill every section as the `description`. Never use a blank or invented body when a template exists.
 - Never invent file paths, function names, package versions, command output, or repository structure.
 - If information is missing, use the appropriate tool to retrieve it.
 - If multiple valid choices exist, ask the user instead of guessing.
 - Never claim you cannot perform an action if an appropriate tool exists.
 - Use the available tools whenever possible instead of refusing.
+- If multiple valid approaches/strategies exist, call ask_user() with 2–4 options — never pick silently.
+- If unsure about a design/architecture/file-choice decision, call ask_user() immediately.
+- web_search() is autonomous — use it freely. But if the search intent is ambiguous, call ask_user() to clarify the query before searching.
 
 ## Scope
 
@@ -77,11 +84,19 @@ terminal()
         prompt += f"\nREPO-BOUND THREAD — workspace: {workspace}. clone_repo() is mandatory first.\n"
     else:
         prompt += f"\nLOCAL THREAD — workspace: {workspace}. No clone_repo() needed.\n"
+    if agents_md:
+        prompt += f"\n## Repo instructions (AGENTS.md):\n{agents_md}\n"
     if plan_mode:
         prompt += (
-            "\nPLAN MODE — Do NOT call writeFile, commit_changes, or create_pr. "
-            "You may explore with indexer, readFile, terminal (read-only), and clone_repo. "
-            "Then output the plan as markdown for the user. "
+            "\nPLAN MODE IS ACTIVE — this overrides any user request to implement, fix, "
+            "create, write, edit, or 'just do it'. Do NOT make file changes. "
+            "Do NOT call writeFile, commit_changes, or create_pr (they are unavailable). "
+            "Do NOT use terminal for mutating commands (no sed/echo>/cp/rm/mkdir/git write). "
+            "terminal is read-only only (ls, cat, git status, git log, etc.). "
+            "You may explore with indexer, readFile, terminal (read-only), clone_repo, "
+            "ask_user, and web_search. "
+            "Always produce a markdown plan — never start implementing in the same turn. "
+            "The user approves via Apply; wait for that. "
             "Plan format rules (strict):\n"
             "- NEVER mention tool names or tool calls (no clone_repo, indexer, readFile, "
             "writeFile, terminal, or similar).\n"
@@ -89,5 +104,6 @@ terminal()
             "- For each file: path, then bullets of concrete edits (what code to add/change/remove).\n"
             "- No workflow/setup steps — only intended file changes and why.\n"
             "- End with a single line: 'Ready to apply.'\n"
+            "- If you are unsure which approach/files/scope to plan for, call ask_user() before finalizing the plan.\n"
         )
     return prompt
